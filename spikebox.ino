@@ -32,7 +32,7 @@ int limit = 3600;
 
 //helpers
 uint8_t toCC(float value, float minVal, float maxVal);
-bool anyPadPressed();
+bool anyPadPressed(int NUM_FSR);
 
 void setup() {
   Serial.begin(115200);
@@ -122,7 +122,7 @@ void loop() {
   }
 
   if (isRecording){
-    if (!anyPadPressed())  {
+    if (!anyPadPressed(NUM_FSR))  {
       for (int i = 0; i < NUM_FSR; i++){
         thresholds[i] = baseline;
       }
@@ -140,8 +140,9 @@ void loop() {
   }
 
   /*
-  gravity - lowkey just direct output
+  gravity
   */
+  float sumOfSquares = values[GRAV_X] * values[GRAV_X] + values[GRAV_Y] * values[GRAV_Y] + values[GRAV_Z] * values[GRAV_Z];
 
   /*
   lin acc 
@@ -149,29 +150,47 @@ void loop() {
 
 
   /*
-  gyro for rotation
+  TODO: gyro for rotation
   */
 
 
   /*
   output values 
-
   send only when changed, fix after all sensor logic is integrated. 
   */
-  // for (int i = 0; i < NUM_FSR; i++) {
-    // uint8_t cc = toCC(max(thresholds[i], values[i]), baseline, limit);
-    // MIDI.sendControlChange(1, cc, i + 1);   
-  // }
+  //fsr
+  for (int i = 0; i < NUM_FSR; i++) {
+    uint8_t cc = toCC(max(thresholds[i], values[i]), baseline, limit);
+    MIDI.sendControlChange(1, cc, i + 1);   
+  }
+
+  //gravity
+  for (int i = GRAV_X; i < GRAV_X + 3; i++){
+    uint8_t cc = toCC(max((values[i] * values[i]) / sumOfSquares, 0.001), 0, 1); // 0/0 evaluates to false, so max is to guard
+    MIDI.sendControlChange(2, cc, i - GRAV_X + 1);
+  }
+
+
+  //lin acc
 
   /*
   debugging
   */ 
-  Serial.print("Values: ");
-  for(int i = 0; i < NUM_FSR; i++){
-    Serial.print(max(thresholds[i], values[i]));
-    Serial.print(" -- ");
-  }
-  Serial.println();
+  // Serial.print("FSR: ");
+  // for(int i = 0; i < NUM_FSR; i++){
+  //   Serial.print(max(thresholds[i], values[i]));
+  //   Serial.print(" -- ");
+  // }
+  // Serial.println();
+
+  Serial.print("GRAV: ");
+  for(int i = GRAV_X; i < GRAV_X + 3; i++){
+      Serial.print((values[i] * values[i]) / sumOfSquares);
+      Serial.print(" -- ");
+    }
+    Serial.println();
+
+
 }
 
 // convert values to CC range - helper
@@ -181,13 +200,12 @@ uint8_t toCC(float value, float minVal, float maxVal) {
   return (uint8_t)(normalized * 127.0f);
 }
 
-bool anyPadPressed(){
-  if (values[FSR0] < baseline &&
-    values[FSR1] < baseline &&
-    values[FSR2] < baseline &&
-    values[FSR3] < baseline &&
-    values[FSR4] < baseline ) {
-    return false;
+bool anyPadPressed(int NUM_FSR){
+  for (int i = 0; i < NUM_FSR; i++){
+    if (values[FSR1] < baseline){
+      continue;
+    } 
+    return true;
   }
-  return true;
+  return false;
 }
