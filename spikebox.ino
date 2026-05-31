@@ -30,6 +30,8 @@ float thresholds[NUM_FSR] = {baseline, baseline, baseline, baseline, baseline};
 bool hasFallen[NUM_FSR] = {false, false, false, false, false};  //hysteresis for pad threshold locking 
 int limit = 3600;
 
+float spikeEnv[3];
+
 //helpers
 uint8_t toCC(float value, float minVal, float maxVal);
 bool anyPadPressed(int NUM_FSR);
@@ -79,7 +81,15 @@ void setup() {
 }
 
 void loop() {
-  // maybe switch to while - understand i2c pipeline and make decision after
+  static unsigned long lastMicros = 0;
+  unsigned long now = micros();
+  float dt = (now - lastMicros) * 1e-6f;   // seconds
+  lastMicros = now;
+
+  float spikeTau = 0.4f;
+  float spikeDecay = expf(-dt / spikeTau);
+
+  // understand why we swtiched from if to while - still fuzzy on this. 
   while (bno.getSensorEvent(&sensorValue)){
     switch (sensorValue.sensorId) {
       case SH2_GRAVITY:
@@ -147,6 +157,9 @@ void loop() {
   /*
   lin acc 
   */
+  for (int i = 0; i < 3; i++){
+    env[i] = max(fabsf(values[LINA_X + i]), spikeEnv[i] * spikeDecay);
+  }
 
 
   /*
@@ -165,13 +178,21 @@ void loop() {
   }
 
   //gravity
-  for (int i = GRAV_X; i < GRAV_X + 3; i++){
-    uint8_t cc = toCC(max((values[i] * values[i]) / sumOfSquares, 0.001), 0, 1); // 0/0 evaluates to false, so max is to guard
-    MIDI.sendControlChange(2, cc, i - GRAV_X + 1);
+  for (int i = 0; i < 3; i++){
+    uint8_t cc;
+    if (sumOfSquares > 0.0001f)     // div by 0
+      cc = toCC((values[GRAV_X + i] * values[GRAV_X + i]) / sumOfSquares, 0, 1);
+    else
+      cc = toCC(0, 0, 1);
+    MIDI.sendControlChange(2, cc, i + 1);
   }
 
+  //lin acc 
+  for (int i = 0; i < 3; i++){
+    uint8_t cc = toCC(spikeEnv[i], 12, 40);
+    MIDI.sendControlChange(3, cc, i + 1);
+  }
 
-  //lin acc
 
   /*
   debugging
@@ -183,14 +204,19 @@ void loop() {
   // }
   // Serial.println();
 
-  Serial.print("GRAV: ");
-  for(int i = GRAV_X; i < GRAV_X + 3; i++){
-      Serial.print((values[i] * values[i]) / sumOfSquares);
-      Serial.print(" -- ");
-    }
-    Serial.println();
+  // Serial.print("GRAV: ");
+  // for(int i = 0; i < 3; i++){
+  //   Serial.print((values[GRAV_X + i] * values[GRAV_X + i]) / sumOfSquares);
+  //   Serial.print(" -- ");
+  // }
+  // Serial.println();
 
-
+  Serial.print("LIN ACC: ");
+  for(int i = 0; i < 3; i++){
+    Serial.print(env[i]);
+    Serial.print(" -- ");
+  }
+  Serial.println();
 }
 
 // convert values to CC range - helper
@@ -202,7 +228,7 @@ uint8_t toCC(float value, float minVal, float maxVal) {
 
 bool anyPadPressed(int NUM_FSR){
   for (int i = 0; i < NUM_FSR; i++){
-    if (values[FSR1] < baseline){
+    if (values[FSR1 + i] < baseline){
       continue;
     } 
     return true;
