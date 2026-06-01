@@ -31,6 +31,7 @@ bool hasFallen[NUM_FSR] = {false, false, false, false, false};  //hysteresis for
 int limit = 3600;
 
 float spikeEnv[3];
+float driftEnv[3];
 
 //helpers
 uint8_t toCC(float value, float minVal, float maxVal);
@@ -86,8 +87,11 @@ void loop() {
   float dt = (now - lastMicros) * 1e-6f;   // seconds
   lastMicros = now;
 
-  float spikeTau = 0.4f;
+  float spikeTau = 0.3f;
   float spikeDecay = expf(-dt / spikeTau);
+
+  float driftTau = 0.1f;
+  float driftDecay = expf(-dt / driftTau);
 
   // understand why we swtiched from if to while - still fuzzy on this. 
   while (bno.getSensorEvent(&sensorValue)){
@@ -157,9 +161,17 @@ void loop() {
   /*
   lin acc 
   */
+  // hold peak and decay
   for (int i = 0; i < 3; i++){
-    env[i] = max(fabsf(values[LINA_X + i]), spikeEnv[i] * spikeDecay);
+    spikeEnv[i] = max(fabsf(values[LINA_X + i]), spikeEnv[i] * spikeDecay);
   }
+
+  // 
+  for (int i = 0; i < 3; i++){
+    driftEnv[i] += (1 - driftDecay) * (values[LINA_X + i] - driftEnv[i]);
+  }
+
+
 
 
   /*
@@ -193,6 +205,15 @@ void loop() {
     MIDI.sendControlChange(3, cc, i + 1);
   }
 
+  //lin acc drift
+  for (int i = 0; i < 1; i++){
+    float n = constrain(driftEnv[i] / 6.0f, -1.0f, 1.0f);  // normalize ±6 -> [-1,1]
+    float e = n * n * n;                                    // cube: expand + keep sign
+    float s = 0.5f + 0.5f * e;                              // re-center -> [0,1], 0 motion = 0.5
+    uint8_t cc = toCC(s, 0, 1);                             // [0,1] -> 0..127, center ~63
+    MIDI.sendControlChange(4, cc, i + 1);
+    Serial.println(cc);
+  }
 
   /*
   debugging
@@ -211,12 +232,20 @@ void loop() {
   // }
   // Serial.println();
 
-  Serial.print("LIN ACC: ");
-  for(int i = 0; i < 3; i++){
-    Serial.print(env[i]);
-    Serial.print(" -- ");
-  }
-  Serial.println();
+  // Serial.print("LIN ACC SPIKE: ");
+  // for(int i = 0; i < 3; i++){
+  //   Serial.print(spikeEnv[i]);
+  //   Serial.print(" -- ");
+  // }
+  // Serial.println();
+
+  // Serial.print("LIN ACC DRIFT: ");
+  // for(int i = 0; i < 3; i++){
+  //   Serial.print(driftEnv[i]);
+  //   Serial.print(" -- ");
+  // }
+  // Serial.println();
+ 
 }
 
 // convert values to CC range - helper
