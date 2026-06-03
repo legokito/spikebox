@@ -1,7 +1,7 @@
 #include <Wire.h>
 #include <Adafruit_BNO08x.h>
 #include <Arduino.h>
-#include <BLEMIDI_Transport.h>
+#include <BLEMIDI_Transport.h> // edited to flush more efficiently
 #include <hardware/BLEMIDI_ESP32_NimBLE.h> // updated with code from here - https://github.com/lathoub/Arduino-BLE-MIDI/issues/96?utm_source=chatgpt.com#issuecomment-2575746451
 
 Adafruit_BNO08x bno(-1);
@@ -54,9 +54,21 @@ void setup() {
   }
 
   //bno
+  int attempts = 0;
   if (!bno.begin_I2C(0x4A, &Wire)) {
     Serial.println("bno not found!");
-    while (1);
+    while (attempts < 5){
+      Serial.print("attempt");
+      Serial.println(attempts);
+      delay(200);
+      if (bno.begin_I2C(0x4a, &Wire)){
+        break;
+      }
+      else{
+        attempts++;
+      }
+    }
+
   }
   if (!bno.enableReport(SH2_GRAVITY, 5000)) { // orientation determines mix level over some effects
     Serial.println("Could not enable gravity vector");
@@ -79,6 +91,9 @@ void setup() {
 
   delay(1000);
   MIDI.begin();
+
+  // solution for bluetooth lagging issue - only flush buffer once full
+  BLEMIDI.setDeferFlush(true);
 }
 
 void loop() {
@@ -87,7 +102,7 @@ void loop() {
   float dt = (now - lastMicros) * 1e-6f;   // seconds
   lastMicros = now;
 
-  float spikeTau = 0.3f;
+  float spikeTau = 0.65f;
   float spikeDecay = expf(-dt / spikeTau);
 
   float driftTau = 0.1f;
@@ -161,91 +176,65 @@ void loop() {
   /*
   lin acc 
   */
-  // hold peak and decay
   for (int i = 0; i < 3; i++){
     spikeEnv[i] = max(fabsf(values[LINA_X + i]), spikeEnv[i] * spikeDecay);
   }
 
-  // 
+  /*
+  lin acc drift
+  */
   for (int i = 0; i < 3; i++){
     driftEnv[i] += (1 - driftDecay) * (values[LINA_X + i] - driftEnv[i]);
   }
-
-
-
 
   /*
   TODO: gyro for rotation
   */
 
-
   /*
   output values 
-  send only when changed, fix after all sensor logic is integrated. 
   */
-  //fsr
-  for (int i = 0; i < NUM_FSR; i++) {
-    uint8_t cc = toCC(max(thresholds[i], values[i]), baseline, limit);
-    MIDI.sendControlChange(1, cc, i + 1);   
-  }
+  static unsigned long lastSendMs = 0;
+  if (millis() - lastSendMs >= 20) {
+    lastSendMs = millis();
 
-  //gravity
-  for (int i = 0; i < 3; i++){
-    uint8_t cc;
-    if (sumOfSquares > 0.0001f)     // div by 0
-      cc = toCC((values[GRAV_X + i] * values[GRAV_X + i]) / sumOfSquares, 0, 1);
-    else
-      cc = toCC(0, 0, 1);
-    MIDI.sendControlChange(2, cc, i + 1);
-  }
+    //fsr
+    for (int i = 0; i < NUM_FSR; i++) {
+      uint8_t cc = toCC(max(thresholds[i], values[i]), baseline, limit);
+      MIDI.sendControlChange(i + 1, cc, 1);
+    }
 
-  //lin acc 
-  for (int i = 0; i < 3; i++){
-    uint8_t cc = toCC(spikeEnv[i], 12, 40);
-    MIDI.sendControlChange(3, cc, i + 1);
-  }
+    //gravity - scaling to allow for better mix blend (cause db scales in ableton are logarithmic)
+    const float dbFloor = -60.0f;   
+    for (int i = 0; i < 3; i++){
+      uint8_t cc;
+      if (sumOfSquares > 0.0001f) {   // div by 0
+        float w = (values[GRAV_X + i] * values[GRAV_X + i]) / sumOfSquares;  
+        float dB = 10.0f * log10f(max(w, 1e-7f)); 
+        cc = toCC(dB, dbFloor, 0);
+      }
+      else
+        cc = toCC(dbFloor, dbFloor, 0);   
+      MIDI.sendControlChange(i + 1, cc, 2);
+    }
 
-  //lin acc drift
-  for (int i = 0; i < 1; i++){
-    float n = constrain(driftEnv[i] / 6.0f, -1.0f, 1.0f);  // normalize ±6 -> [-1,1]
-    float e = n * n * n;                                    // cube: expand + keep sign
-    float s = 0.5f + 0.5f * e;                              // re-center -> [0,1], 0 motion = 0.5
-    uint8_t cc = toCC(s, 0, 1);                             // [0,1] -> 0..127, center ~63
-    MIDI.sendControlChange(4, cc, i + 1);
-    Serial.println(cc);
-  }
+    //lin acc
+    for (int i = 0; i < 3; i++){
+      uint8_t cc = toCC(spikeEnv[i], 12, 40);
+      MIDI.sendControlChange(i + 1, cc, 3);
+    }
 
-  /*
-  debugging
-  */ 
-  // Serial.print("FSR: ");
-  // for(int i = 0; i < NUM_FSR; i++){
-  //   Serial.print(max(thresholds[i], values[i]));
-  //   Serial.print(" -- ");
-  // }
-  // Serial.println();
+    //lin acc drift
+    for (int i = 0; i < 3; i++){
+      float n = constrain(driftEnv[i] / 15.0f, -1.0f, 1.0f);  // normalize ±6 -> [-1,1]
+      float e = n;                                    // scaling
+      float s = 0.5f + 0.5f * e;                              // default to center
+      uint8_t cc = toCC(s, 0, 1);
+      MIDI.sendControlChange(i + 1, cc, 4);
+    }
 
-  // Serial.print("GRAV: ");
-  // for(int i = 0; i < 3; i++){
-  //   Serial.print((values[GRAV_X + i] * values[GRAV_X + i]) / sumOfSquares);
-  //   Serial.print(" -- ");
-  // }
-  // Serial.println();
-
-  // Serial.print("LIN ACC SPIKE: ");
-  // for(int i = 0; i < 3; i++){
-  //   Serial.print(spikeEnv[i]);
-  //   Serial.print(" -- ");
-  // }
-  // Serial.println();
-
-  // Serial.print("LIN ACC DRIFT: ");
-  // for(int i = 0; i < 3; i++){
-  //   Serial.print(driftEnv[i]);
-  //   Serial.print(" -- ");
-  // }
-  // Serial.println();
- 
+    BLEMIDI.flush();
+  } 
 }
 
 // convert values to CC range - helper
