@@ -2,7 +2,7 @@
 
 Live effects controller that you can control over or spike(!) across any intuitive direction for unique parameter control (used for audio in this case)!
 
-[Watch video](spikebox-demo.mp4)
+https://github.com/legokito/spikebox/blob/main/spikebox-demo.mp4
 
 ## Goal 
 
