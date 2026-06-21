@@ -1,8 +1,8 @@
-## Project
+### Spikebox!
 
 Live effects controller that you can control over or spike(!) across any intuitive direction for unique parameter control (used for audio in this case)!
 
-https://github.com/legokito/spikebox/blob/main/spikebox-demo.mp4
+https://github.com/user-attachments/assets/6cc97771-afb4-4d0b-955f-eef657490ff3
 
 ## Goal 
 
