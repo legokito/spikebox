@@ -1,4 +1,4 @@
-### Spikebox!
+# Spikebox!
 
 Live effects controller that you can control over or spike(!) across any intuitive direction for unique parameter control (used for audio in this case)!
 
@@ -14,15 +14,15 @@ I wanted something that was learnable and rigorously controllable over each para
 - Looked into balls, toys, foot-boards, and other input measures but the cube felt the most fun (you can throw it around!).
 - (...I still have to work on fleshing this out)
 
-# CAD
+### CAD
 .stl files
 
-# Electronics
+### Electronics
 esp32 c3 mini
 adafruit bno085 (IMU)
 6x custom capacitive touch pads (ref: https://learn.bela.io/tutorials/pure-data/sensors/diy-pressure-sensor/)
 
-# Code
+### Code
 .ino file + imports
 
 
