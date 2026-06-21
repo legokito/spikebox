@@ -226,7 +226,7 @@ void loop() {
 
     //lin acc drift
     for (int i = 0; i < 3; i++){
-      float n = constrain(driftEnv[i] / 15.0f, -1.0f, 1.0f);  // normalize ±6 -> [-1,1]
+      float n = constrain(driftEnv[i] / 15.0f, -1.0f, 1.0f);  // normalize
       float e = n;                                    // scaling
       float s = 0.5f + 0.5f * e;                              // default to center
       uint8_t cc = toCC(s, 0, 1);
