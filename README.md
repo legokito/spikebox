@@ -18,8 +18,8 @@ I wanted something that was learnable and rigorously controllable over each para
 .stl files
 
 ### Electronics
-esp32 c3 mini
-adafruit bno085 (IMU)
+esp32 c3 mini  
+adafruit bno085 (IMU)  
 6x custom capacitive touch pads (ref: https://learn.bela.io/tutorials/pure-data/sensors/diy-pressure-sensor/)
 
 ### Code
